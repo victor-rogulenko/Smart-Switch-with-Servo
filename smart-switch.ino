@@ -9,33 +9,33 @@
 
 enum servo_flip_to_state {ON, OFF};
 
-const char* ssid = "TBD";
-const char* password = "TBD";
+const char* ssid = "000-Blue-Puppy";
+const char* password = "280uVrNbBL";
 const String device_name = "Bathroom-Boiler-Switch";
 
-const int no_custom_duration = (int)(1e9);
-const int full_day = 24 * 3600; // Time in seconds
-const int start_night = 0 * 3600 + 5 * 60; // Time in seconds since midnight. 00:05
-const int end_night = 7 * 3600 + 45 * 60; // Time in seconds since midnight. 07:45
+const unsigned long full_day = 24UL * 3600; // Time in seconds
+const unsigned long start_night = 0 * 3600UL + 5 * 60; // Time in seconds since midnight. 00:05
+const unsigned long end_night = 7 * 3600UL + 45 * 60; // Time in seconds since midnight. 07:45
+const unsigned long loop_delay_time = 1UL * 60 * 1000; // 1 minute in milliseconds
 
-const int day_duration = (start_night - end_night + full_day) % full_day;
-const int night_duration = (end_night - start_night + full_day) % full_day;
+const unsigned long day_duration = (full_day + start_night - end_night) % full_day;
+const unsigned long night_duration = (full_day + end_night - start_night) % full_day;
 
 const int servo_pin = 5;
 const int led_pin = 1;
-const int flip_time = 500; // Time in milliseconds
+const int flip_time = 200; // Time in milliseconds
 const int wifi_attempt_time = 1000;
 const int utcOffsetInSeconds = 7200; // Central European Time
 
-const int angle_on = 170;
-const int angle_off = 10;
+const int angle_off = 170;
+const int angle_on = 10;
 const int angle_mid = 85;
 
 Servo servo;
 
 // variables to hold current time
 bool is_daytime = true;
-int custom_duration = no_custom_duration;
+unsigned long custom_duration = full_day;
 
 void flip(const servo_flip_to_state new_state) {  // One movement of servo and back to mid
   if (new_state == ON) {
@@ -45,6 +45,14 @@ void flip(const servo_flip_to_state new_state) {  // One movement of servo and b
   }
   delay(flip_time);
   servo.write(angle_mid);
+}
+
+bool isDay (unsigned long current_time) {
+  if (start_night > end_night) {  // E.g. start_night 23.00, end_night 8.00
+    return ((current_time > end_night) && (current_time < start_night));
+  } else {  // E.g. start_night 01.00, end night 8.00
+    return ((current_time > end_night) || (current_time < start_night));
+  }
 }
 
 // Upon turning on, get time
@@ -67,34 +75,49 @@ void connectToWifi() {
   Serial.println(WiFi.localIP());
 }
 
-int getCurrentTime() {
+unsigned long getCurrentTime() {
   // Return the number of seconds since midnight today
   Serial.println("Getting current time...");
   WiFiUDP Udp;
   NTPClient timeClient(Udp, "pool.ntp.org", utcOffsetInSeconds);
   timeClient.begin();
   timeClient.update();
-  int hh = timeClient.getHours();
-  int mm = timeClient.getMinutes();
-  int ss = timeClient.getSeconds();
+  unsigned long hh = timeClient.getHours();
+  unsigned long mm = timeClient.getMinutes();
+  unsigned long ss = timeClient.getSeconds();
   Serial.println((String)"Current time is " + hh + " hours " + mm + " minutes " + ss + " seconds");
-  int result = hh * 3600 + mm * 60 + ss;
+  unsigned long result = 3600UL * hh + 60UL * mm + ss;
   return result;
 }
 
-void oneOperation(bool is_daytime, int custom_duration) {
-  int duration;
+void splitDelay(unsigned long time_to_delay) {
+  unsigned long remaining_wait_time = time_to_delay;
+  unsigned long current_delay;
+  Serial.println((String)"Starting delay of " + time_to_delay/1000 + " seconds...");
+  while (remaining_wait_time > 0) {
+    current_delay = std::min(remaining_wait_time, loop_delay_time);
+    delay(current_delay);
+    remaining_wait_time -= current_delay;
+    Serial.println((String)"Wait time: still " + remaining_wait_time/1000 + " seconds to go");
+  }
+  Serial.println((String)"Delay of " + time_to_delay/1000 + " seconds complete!");
+}
+
+void oneOperation(bool is_daytime, unsigned long custom_duration) {
+  unsigned long duration;
   if (is_daytime) {
     Serial.println("Good morning! Turning the boiler OFF");
     flip(OFF);
+    digitalWrite(LED, HIGH);
     duration = std::min(day_duration, custom_duration);
   } else {
     Serial.println("Good night! Turning the boiler ON");
     flip(ON);
+    digitalWrite(LED, LOW); // turn on the led at night
     duration = std::min(night_duration, custom_duration);
   }
   Serial.println((String)"The next operation will happen in " + duration + " seconds");
-  delay(duration * 1000);
+  splitDelay(1000UL * duration);
 }
 
 void setup() {
@@ -108,16 +131,16 @@ void setup() {
   digitalWrite(LED, HIGH);
 
   // get current time
-  int current_time = getCurrentTime();
+  unsigned long current_time = getCurrentTime();
 
   // run the first operation with custom duration 
   // (since the start is sometime during the day/nigh);
-  if (current_time < end_night) {
-    is_daytime = false;
-    custom_duration = end_night - current_time;
-  } else {
+  if (isDay(current_time)) {
     is_daytime = true;
     custom_duration = (full_day + start_night - current_time) % full_day; // if start_night is before midnight
+  } else {
+    is_daytime = false;
+    custom_duration = (full_day + end_night - current_time) % full_day;
   }
   
   oneOperation(is_daytime, custom_duration);
@@ -125,6 +148,6 @@ void setup() {
 }
 
 void loop() {
-  oneOperation(is_daytime, no_custom_duration);
+  oneOperation(is_daytime, full_day);
   is_daytime = !is_daytime;
 }
