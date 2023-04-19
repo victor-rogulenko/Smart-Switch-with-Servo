@@ -1,6 +1,6 @@
 # Smart-Switch-with-Servo
 
-This is code for a smart switch. I use it to turn my dumb bathroom switch into a smart one.
+This is a piece of code for a smart on-off flip switch. I use it to turn my dumb bathroom switch into a smart one.
 
 The hardware is based on this project https://www.thingiverse.com/thing:2848069 except for a more powerful MG996R servo. The later required a separate power source.
 
